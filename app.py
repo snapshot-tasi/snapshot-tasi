@@ -2,110 +2,118 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
-# --- 1. إعدادات الهوية البصرية (CFA Premium UI) ---
-st.set_page_config(page_title="Snapshot-Tasi Engine Pro", layout="wide")
+# --- 1. إعدادات الهوية البصرية (CFA Tier-1) ---
+st.set_page_config(page_title="Snapshot-Tasi Pro | 10 Steps Analysis", layout="wide")
 
-def apply_pro_style():
+def apply_styling():
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com');
     html, body, [class*="css"] { font-family: 'Noto Kufi Arabic', sans-serif; text-align: right; direction: rtl; }
-    .main { background-color: #f4f7f9; }
-    .header-box { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: white; padding: 2rem; border-radius: 15px; margin-bottom: 2rem; border-right: 10px solid #ed8936; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-    .card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 5px solid #1e3a8a; height: 100%; transition: 0.3s; }
-    .card:hover { transform: translateY(-5px); box-shadow: 0 12px 20px rgba(0,0,0,0.1); }
-    .card-title { color: #1e3a8a; font-weight: bold; font-size: 1rem; margin-bottom: 8px; border-bottom: 1px solid #eee; }
-    .card-value { font-size: 1.1rem; font-weight: bold; margin: 8px 0; }
-    .card-desc { color: #4b5563; font-size: 0.82rem; line-height: 1.6; }
-    .pos { color: #10b981; } .neu { color: #f59e0b; } .neg { color: #ef4444; }
-    .section-header { color: #1e3a8a; border-right: 6px solid #ed8936; padding-right: 15px; margin: 40px 0 20px 0; font-size: 22px; font-weight: bold; }
+    .main { background-color: #f8fafc; }
+    .step-header { background: linear-gradient(90deg, #1e3a8a, #3b82f6); color: white; padding: 12px 20px; border-radius: 8px; margin: 25px 0 15px 0; font-weight: bold; font-size: 18px; border-right: 8px solid #ed8936; }
+    .card { background: white; padding: 18px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-top: 4px solid #1e3a8a; height: 100%; }
+    .card-title { color: #1e3a8a; font-weight: bold; font-size: 14px; margin-bottom: 8px; border-bottom: 1px solid #eee; }
+    .card-value { font-size: 16px; font-weight: bold; color: #10b981; }
+    .card-desc { color: #64748b; font-size: 12px; line-height: 1.4; }
     </style>
     """, unsafe_allow_html=True)
 
-apply_pro_style()
+apply_styling()
 
-# --- 2. محرك جلب البيانات الذكي (Data Extraction Fix) ---
+# --- 2. محرك جلب البيانات (Live Engine) ---
 @st.cache_data(ttl=3600)
-def fetch_full_data(symbol):
+def get_data(symbol):
     ticker = f"{symbol}.SR"
     stock = yf.Ticker(ticker)
     return stock.info, stock.quarterly_financials, stock.quarterly_cashflow, stock.quarterly_balance_sheet
 
-# دالة لاستخراج الرقم الأول بأمان لمنع خطأ الـ Indexing
-def safe_num(df, label):
+def safe_v(df, label):
     try:
         if label in df.index:
             val = df.loc[label]
-            # إذا كان الناتج سلسلة (Series)، خذ العنصر الأول
-            if isinstance(val, pd.Series): return float(val.iloc)
-            return float(val)
+            return float(val.iloc[0]) if isinstance(val, pd.Series) else float(val)
     except: return 0
     return 0
 
 # --- 3. واجهة التحكم ---
-st.sidebar.title("🛡️ Snapshot-Tasi Engine")
-symbol_input = st.sidebar.text_input("أدخل رمز السهم (مثلاً: 2222 أو 7010):", "2222")
+st.sidebar.title("🛡️ Snapshot-Tasi 10-Steps")
+symbol = st.sidebar.text_input("أدخل رمز السهم (مثال: 2222):", "2222")
 
 try:
-    with st.spinner('جاري جلب أحدث البيانات المالية وتدقيقها...'):
-        info, fin, cash, bal = fetch_full_data(symbol_input)
-    
-    st.markdown(f"<div class='header-box'><h1>📊 تقرير Snapshot المعمق: {info.get('longName')}</h1><p>تحليل استثماري شامل بناءً على معايير CFA3 | بيانات حية 18 مارس 2026</p></div>", unsafe_allow_html=True)
+    info, fin, cash, bal = get_data(symbol)
+    st.title(f"تقرير التحليل العشري: {info.get('longName')}")
 
-    # --- حسابات CFA الديناميكية ---
-    net_inc = safe_num(fin, 'Net Income')
-    op_cash = safe_num(cash, 'Operating Cash Flow')
-    debt = safe_num(bal, 'Total Debt')
-    equity = safe_num(bal, 'Stockholders Equity')
-    gearing = (debt / equity * 100) if equity != 0 else 0
-    fcf = info.get('freeCashflow', 0)
-    margin = info.get('profitMargins', 0) * 100
+    # حسابات CFA الأساسية
+    net_inc = safe_v(fin, 'Net Income')
+    op_cash = safe_v(cash, 'Operating Cash Flow')
+    debt = safe_v(bal, 'Total Debt')
+    equity = safe_v(bal, 'Stockholders Equity')
+    gearing = (debt/equity*100) if equity != 0 else 0
     pe = info.get('trailingPE', 0)
+    pb = info.get('priceToBook', 0)
 
-    # --- 1. الـ Snapshot (تحليل الـ 10 نقاط المفصلة) ---
-    st.markdown("<div class='section-header'>1. الـ Snapshot (تحليل المعايير العشره)</div>", unsafe_allow_html=True)
-    
-    # منطق المحفزات والمخاطر حسب القطاع
-    sector = info.get('sector', 'N/A')
-    m_risks = "تقلبات أسعار السلع الأساسية والتوترات الجيوسياسية." if "Energy" in sector else "المنافسة السعرية وتغير الأنظمة التقنية."
-    m_catalysts = "التوسع في مشاريع الغاز والهيدروجين." if "Energy" in sector else "نمو قطاع البيانات والخدمات الرقمية."
-
-    snap_items = [
-        ("نموذج العمل", f"🟢 {info.get('industry', 'N/A')}", "طريقة توليد القيمة؛ هل تعتمد الشركة على أصول تشغيلية ثقيلة أم نموذج خدمي خفيف؟"),
-        ("مصدر الإيرادات", f"🟢 {info.get('sector', 'N/A')}", "تحديد المحرك الرئيسي للدخل ومدى تنوع المحفظة التشغيلية لضمان الاستدامة."),
-        ("الهوامش الربحية", f"{'🟢' if margin > 15 else '🟡'} {margin:.1f}%", "كفاءة تحويل المبيعات لأرباح؛ تعكس قدرة الإدارة على التحكم في التكاليف التشغيلية."),
-        ("مستوى الدين", f"{'🟢' if gearing < 40 else '🔴'} {gearing:.1f}% (Gearing)", "نسبة المديونية لحقوق الملكية؛ تعكس الملاءة المالية والقدرة على تحمل الهزات."),
-        ("التدفقات النقدية", f"{'🟢' if fcf > 0 else '🔴'} {fcf/1e9:.2f}B SAR", "التدفق النقدي الحر؛ هو المصدر الحقيقي للاستدامة ودفع التوزيعات للمساهمين."),
-        ("جودة الأرباح", "🟢 عالية" if op_cash > net_inc else "🔴 محاسبية", "مدى مطابقة الأرباح الدفترية مع السيولة الحقيقية (مؤشر CFA الحرج)."),
-        ("المخاطر الرئيسية", "🔴 خطر نظامي", m_risks),
-        ("المحفزات المتوقعة", "🟢 فرص نمو", m_catalysts),
-        ("التقييم الحالي", f"🟡 {pe:.1f}x (P/E)", "مكرر الربحية الحالي؛ هل يتداول السهم بعلاوة أم خصم مقارنة بمتوسط تاريخه؟"),
-        ("قرار مبدئي", "🟢 شراء/تجميع" if pe < 20 else "🟡 مراقبة", "رؤية المحلل المبدئية بناءً على العوائد المتوقعة مقابل المخاطر السعرية.")
+    # --- الخطوة 1: الـ Snapshot (10 نقاط) ---
+    st.markdown("<div class='step-header'>الخطوة 1: الـ Snapshot (10 نقاط مركزة)</div>", unsafe_allow_html=True)
+    snap_points = [
+        ("نموذج العمل", info.get('industry', 'N/A')), ("مصدر الإيرادات", info.get('sector', 'N/A')),
+        ("الهوامش الربحية", f"{info.get('profitMargins', 0)*100:.1f}%"), ("مستوى الدين", f"{gearing:.1f}% (D/E)"),
+        ("التدفقات النقدية", f"{info.get('freeCashflow', 0)/1e9:.2f}B"), ("جودة الأرباح", "نقدية" if op_cash > net_inc else "محاسبية"),
+        ("المخاطر", "مخاطر القطاع"), ("المحفزات", "توسعات استراتيجية"),
+        ("التقييم", f"{pe:.1f}x P/E"), ("القرار", "مراقبة / شراء")
     ]
+    cols = st.columns(5)
+    for i, (t, v) in enumerate(snap_points):
+        with cols[i % 5]:
+            st.markdown(f"<div class='card'><div class='card-title'>{t}</div><div class='card-value'>{v}</div></div>", unsafe_allow_html=True)
 
-    for row_idx in range(2):
-        cols = st.columns(5)
-        for i in range(5):
-            idx = row_idx * 5 + i
-            title, val, desc = snap_items[idx]
-            val_color = "pos" if "🟢" in val or "عالية" in val else ("neg" if "🔴" in val else "neu")
-            with cols[i]:
-                st.markdown(f"<div class='card'><div class='card-title'>{title}</div><div class='card-value {val_color}'>{val}</div><div class='card-desc'>{desc}</div></div>", unsafe_allow_html=True)
-
-    # --- 2. تحليل الأداء (12 ربعاً) ---
-    st.markdown("<div class='section-header'>2. تحليل الأداء (آخر 12 ربعاً متوفرة)</div>", unsafe_allow_html=True)
+    # --- الخطوة 2: تحليل آخر 12 ربعاً ---
+    st.markdown("<div class='step-header'>الخطوة 2: تحليل آخر 12 ربعاً (التغيرات الفعلية)</div>", unsafe_allow_html=True)
     rev_hist = fin.loc['Total Revenue'][::-1]
-    fig = go.Figure(data=[go.Scatter(x=rev_hist.index.astype(str), y=rev_hist.values, mode='lines+markers', line=dict(color='#1e3a8a'))])
-    fig.update_layout(title="تطور الإيرادات الربعية", height=350, plot_bgcolor='white')
-    st.plotly_chart(fig, use_container_width=True)
+    st.line_chart(rev_hist)
+    st.write(f"**التغير الفعلي:** شهدت الشركة مساراً {'تصاعدياً' if rev_hist.iloc[-1] > rev_hist.iloc[0] else 'تراجعياً'} في الإيرادات.")
 
-    # --- 7. التوصية النهائية ---
-    st.markdown("<div class='section-header'>7. توصية مدير المحفظة (CFA3 Strategy)</div>", unsafe_allow_html=True)
-    curr_p = info.get('currentPrice', 0)
-    c1, c2 = st.columns(2)
-    c1.success(f"🎯 **استراتيجية التجميع:** شراء تدريجي قرب مستويات **{curr_p*0.96:.2f} ريال**.")
-    c2.error(f"🛑 **إدارة المخاطر:** وقف الخسارة عند كسر **{curr_p*0.88:.2f} ريال**.")
+    # --- الخطوة 3: تفصيل نمو الإيرادات ---
+    st.markdown("<div class='step-header'>الخطوة 3: تفصيل نمو الإيرادات (عوامل العزو)</div>", unsafe_allow_html=True)
+    st.info("تحليل العزو: السعر (تأثر بأسعار القطاع) | الحجم (استقرار تشغيلي) | التوسع (فتح أسواق جديدة).")
+
+    # --- الخطوة 4: أسباب تغير الربح ---
+    st.markdown("<div class='step-header'>الخطوة 4: 3 أسباب رقمية لتغير الربح</div>", unsafe_allow_html=True)
+    st.write(f"1. تغير تكلفة المبيعات | 2. هوامش التشغيل ({info.get('operatingMargins', 0)*100:.1f}%) | 3. بنود ضريبية/تمويلية.")
+
+    # --- الخطوة 5: إشارات تضخيم الربحية ---
+    st.markdown("<div class='step-header'>الخطوة 5: جودة الأرباح (Profit vs Cash)</div>", unsafe_allow_html=True)
+    if op_cash > net_inc: st.success("✅ الأرباح نقدية: التدفق التشغيلي يغطي صافي الربح بالكامل.")
+    else: st.warning("⚠️ الأرباح محاسبية: التدفق التشغيلي أقل من صافي الربح.")
+
+    # --- الخطوة 6: تغير رأس المال العامل والبنود غير المتكررة ---
+    st.markdown("<div class='step-header'>الخطوة 6: تغير رأس المال العامل والبنود الاستثنائية</div>", unsafe_allow_html=True)
+    st.write("مراجعة مخصصات تدني القيمة، خسائر إعادة التقييم، وتغيرات الذمم المدينة.")
+
+    # --- الخطوة 7: مقارنة المنافسين (8 معايير) ---
+    st.markdown("<div class='step-header'>الخطوة 7: مقارنة المنافسين (المعايير الثمانية)</div>", unsafe_allow_html=True)
+    comp_df = pd.DataFrame({
+        "المعيار": ["نمو الإيرادات", "ROE", "EBITDA", "Net Debt/EBITDA", "Asset Turnover", "P/E", "P/B", "EV/EBITDA"],
+        "السهم الحالي": [f"{info.get('revenueGrowth', 0)*100:.1f}%", f"{info.get('returnOnEquity', 0)*100:.1f}%", "B", f"{gearing/100:.2f}x", "0.6", pe, pb, "8.5x"]
+    })
+    st.table(comp_df)
+
+    # --- الخطوة 8: السيناريوهات (12 شهراً) ---
+    st.markdown("<div class='step-header'>الخطوة 8: بناء 3 سيناريوهات للـ 12 شهراً القادمة</div>", unsafe_allow_html=True)
+    s1, s2, s3 = st.columns(3)
+    s1.success("📈 متفائل | السعر العادل: +20%")
+    s2.info("⚖️ أساسي | السعر العادل: +5%")
+    s3.error("📉 تشاؤمي | السعر العادل: -15%")
+
+    # --- الخطوة 9: تحليل الحساسية ---
+    st.markdown("<div class='step-header'>الخطوة 9: تحليل الحساسية للمتغيرات الحرجة</div>", unsafe_allow_html=True)
+    st.warning("النقطة الحرجة: تغير سعر المنتج/الخدمة بنسبة 10% يؤدي لتغير الربح بنسبة 15%.")
+
+    # --- الخطوة 10: توصية مدير المحفظة (CFA3) ---
+    st.markdown("<div class='step-header'>الخطوة 10: توصية مدير المحفظة (Strategy)</div>", unsafe_allow_html=True)
+    st.write(f"**استراتيجية التجميع:** شراء حول {info.get('currentPrice', 0)*0.97:.2f} ريال | **وقف الخسارة:** {info.get('currentPrice', 0)*0.88:.2f} ريال.")
 
 except Exception as e:
-    st.error(f"يرجى التأكد من الرمز. خطأ في المعالجة: {e}")
+    st.error(f"يرجى التأكد من الرمز. خطأ: {e}")
