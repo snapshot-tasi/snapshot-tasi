@@ -2,9 +2,10 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
+from datetime import datetime
 
 # --- 1. إعدادات الهوية البصرية ---
-st.set_page_config(page_title="Snapshot-Tasi Engine", layout="wide")
+st.set_page_config(page_title="Snapshot-Tasi Live Engine", layout="wide")
 
 def apply_pro_styling():
     st.markdown("""
@@ -23,52 +24,67 @@ def apply_pro_styling():
 
 apply_pro_styling()
 
-# --- 2. محرك جلب وتحليل البيانات الحية ---
-@st.cache_data(ttl=3600)
-def fetch_and_analyze(symbol):
+# --- 2. محرك جلب البيانات اللحظية (Real-Time API) ---
+@st.cache_data(ttl=3600) # التحديث كل ساعة لضمان دقة البيانات
+def fetch_live_data(symbol):
     ticker = f"{symbol}.SR"
     stock = yf.Ticker(ticker)
+    
+    # جلب البيانات الأساسية، القوائم المالية، والتدفقات النقدية
     info = stock.info
     fin = stock.quarterly_financials
     cash = stock.quarterly_cashflow
-    hist = stock.history(period="2y")
-    return info, fin, cash, hist
+    bal = stock.quarterly_balance_sheet
+    hist = stock.history(period="2y") # تاريخ السهم لآخر سنتين
+    
+    return info, fin, cash, bal, hist
 
 # --- 3. واجهة التحكم ---
-st.sidebar.title("🛡️ محرك Snapshot-Tasi")
-symbol_input = st.sidebar.text_input("أدخل رمز السهم (مثلاً: 1120 لـ الراجحي):", "2222")
+st.sidebar.title("🛡️ محرك Snapshot-Tasi المباشر")
+symbol_input = st.sidebar.text_input("أدخل رمز السهم (مثلاً: 2222 لأرامكو):", "2222")
+current_date = datetime.now().strftime("%Y-%m-%d")
 
 try:
-    info, fin, cash, hist = fetch_and_analyze(symbol_input)
-    st.markdown(f"<div class='header-box'><h1>🛡️ Snapshot-Tasi: {info.get('longName')} ({symbol_input})</h1><p>تحليل استراتيجي آلي بناءً على معايير CFA3 | بيانات حية</p></div>", unsafe_allow_html=True)
+    with st.spinner('جاري سحب أحدث البيانات المالية من تداول...'):
+        info, fin, cash, bal, hist = fetch_live_data(symbol_input)
 
-    # --- حساب المؤشرات المالية ديناميكياً ---
-    pe = info.get('trailingPE', 0)
-    gearing = (info.get('totalDebt', 0) / info.get('totalEquity', 1)) * 100 if info.get('totalEquity') else 0
-    margin = info.get('profitMargins', 0) * 100
-    fcf = info.get('freeCashflow', 0) / 1e6 # بالمليون
+    st.markdown(f"""
+    <div class='header-box'>
+        <h1>🛡️ Snapshot-Tasi: {info.get('longName')} ({symbol_input})</h1>
+        <p>تحليل استراتيجي آلي بناءً على بيانات حقيقية بتاريخ: {current_date}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- الحسابات المالية اللحظية (CFA Formulas) ---
+    curr_price = info.get('currentPrice', 0)
+    pe_ratio = info.get('trailingPE', 0)
+    # حساب نسبة الدين (D/E) من الميزانية العمومية الحقيقية
+    total_debt = bal.loc['Total Debt'].iloc if 'Total Debt' in bal.index else 0
+    total_equity = bal.loc['Stockholders Equity'].iloc if 'Stockholders Equity' in bal.index else 1
+    gearing = (total_debt / total_equity) * 100
     
-    # تحديد الجودة (صافي الربح vs تدفق تشغيلي)
-    net_inc = fin.loc['Net Income'].iloc[0] if 'Net Income' in fin.index else 1
-    op_cash = cash.loc['Operating Cash Flow'].iloc[0] if 'Operating Cash Flow' in cash.index else 0
-    quality_status = 1 if op_cash > net_inc else 3
+    # جودة الأرباح: التدفق التشغيلي مقابل صافي الربح
+    latest_net_inc = fin.loc['Net Income'].iloc if 'Net Income' in fin.index else 0
+    latest_op_cash = cash.loc['Operating Cash Flow'].iloc if 'Operating Cash Flow' in cash.index else 0
+    quality_status = 1 if latest_op_cash > latest_net_inc else 3
 
-    # --- 1. الـ Snapshot الديناميكي ---
-    st.markdown("<div class='section-title'>1. الـ Snapshot (تحليل آلي للمؤشرات)</div>", unsafe_allow_html=True)
+    # --- 1. الـ Snapshot المحدث ---
+    st.markdown("<div class='section-title'>1. الـ Snapshot (آخر تحديث متاح)</div>", unsafe_allow_html=True)
     
     snap_items = [
-        ("نموذج العمل", f"🟢 {info.get('industry', 'N/A')}", "طريقة توليد القيمة في القطاع الذي تعمل فيه الشركة.", 1),
-        ("مصدر الإيرادات", f"🟢 {info.get('sector', 'N/A')}", "القطاع الرئيسي المحرك للمبيعات والنمو.", 1),
-        ("الهوامش الربحية", f"{'🟢' if margin > 15 else '🟡'} {margin:.1f}%", "كفاءة الإدارة في تحويل المبيعات إلى أرباح صافية.", 1 if margin > 15 else 2),
-        ("مستوى الدين", f"{'🟢' if gearing < 50 else '🔴'} {gearing:.1f}% (D/E)", "قدرة الشركة على تغطية التزاماتها ومخاطر الرفع المالي.", 1 if gearing < 50 else 3),
-        ("التدفقات النقدية", f"{'🟢' if fcf > 0 else '🔴'} {fcf:.1f}M", "السيولة المتاحة بعد النفقات الرأسمالية (وقود التوزيعات).", 1 if fcf > 0 else 3),
-        ("جودة الأرباح", f"{'🟢 نقدية' if quality_status==1 else '🔴 محاسبية'}", "مدى تطابق الأرباح الدفترية مع السيولة النقدية الفعلية.", quality_status),
-        ("المخاطر الرئيسية", "🟡 مخاطر القطاع", "تأثر الشركة بالدورة الاقتصادية وتغير أسعار الفائدة واللقيم.", 2),
-        ("المحفزات", "🟢 نمو تشغيلي", "التوسعات المرتقبة وخطط الشركة الاستراتيجية لزيادة الحصة السوقية.", 1),
-        ("التقييم الحالي", f"{'🟢' if pe < 15 else '🟡'} {pe:.1f}x (P/E)", "مقارنة السعر بالربحية؛ هل يتداول السهم بخصم أم علاوة؟", 1 if pe < 15 else 2),
-        ("قرار مبدئي", f"{'🟢 شراء/تجميع' if pe < 20 else '🟡 مراقبة'}", "رؤية المحرك المبدئية بناءً على مكررات الربحية والتدفقات.", 1 if pe < 20 else 2)
+        ("نموذج العمل", f"🟢 {info.get('industry', 'Data Required')}", "تحليل الأنشطة التشغيلية الحالية للشركة.", 1),
+        ("مصدر الإيرادات", f"🟢 {info.get('sector', 'Data Required')}", "القطاع الرئيسي الذي يولد الدخل التشغيلي.", 1),
+        ("الهوامش الربحية", f"{'🟢' if info.get('profitMargins', 0) > 0.15 else '🟡'} {info.get('profitMargins', 0)*100:.1f}%", "كفاءة تحويل المبيعات لأرباح (بيانات حية).", 1 if info.get('profitMargins', 0) > 0.15 else 2),
+        ("مستوى الدين", f"{'🟢' if gearing < 40 else '🔴'} {gearing:.1f}% (D/E)", "نسبة المديونية الحقيقية بناءً على آخر ميزانية عمومية.", 1 if gearing < 40 else 3),
+        ("التدفقات النقدية", f"🟢 {info.get('freeCashflow', 0)/1e9:.2f}B", "التدفق النقدي الحر السنوي (FCF) المحقق.", 1),
+        ("جودة الأرباح", f"{'🟢 نقدية عالية' if quality_status==1 else '🔴 محاسبية/مستحقات'}", "مقارنة السيولة بالربح الدفتري لآخر ربع مالي.", quality_status),
+        ("المخاطر", "🟡 مخاطر السوق", "تأثر الشركة بأسعار السلع أو تكلفة التمويل الحالية.", 2),
+        ("المحفزات", "🟢 نمو استراتيجي", "المشروعات الرأسمالية والتوسعية المعلنة.", 1),
+        ("التقييم P/E", f"{'🟢 جذاب' if pe_ratio < 15 else '🟡 عادل'} {pe_ratio:.2f}x", "تقييم السهم بناءً على سعر السوق الحالي وأرباح آخر 12 شهر.", 1 if pe_ratio < 15 else 2),
+        ("قرار مبدئي", f"{'🟢 شراء/تجميع' if pe_ratio < 20 else '🟡 مراقبة'}", "رؤية استثمارية مبدئية بناءً على المعايير الحالية.", 1 if pe_ratio < 20 else 2)
     ]
 
+    # عرض البطاقات (2 صفوف × 5 أعمدة)
     for row in range(2):
         cols = st.columns(5)
         for i in range(5):
@@ -78,25 +94,26 @@ try:
             with cols[i]:
                 st.markdown(f"<div class='snap-card'><div class='snap-title'>{title}</div><div class='snap-value {val_class}'>{val}</div><p style='font-size:0.8rem; color:#64748b;'>{desc}</p></div>", unsafe_allow_html=True)
 
-    # --- 2. تحليل الأداء (12 ربعاً - ديناميكي) ---
-    st.markdown("<div class='section-title'>2. تحليل الأداء (آخر 8-12 ربعاً متوفرة)</div>", unsafe_allow_html=True)
+    # --- 2. تحليل الأداء الحقيقي (12 ربعاً) ---
+    st.markdown("<div class='section-title'>2. تحليل الأداء (مسار الإيرادات التاريخي)</div>", unsafe_allow_html=True)
     c2_l, c2_r = st.columns([2, 1])
     with c2_l:
-        rev_hist = fin.loc['Total Revenue'][::-1]
-        fig = go.Figure(data=[go.Scatter(x=rev_hist.index.astype(str), y=rev_hist.values, mode='lines+markers', line=dict(color='#2b6cb0', width=3))])
-        fig.update_layout(title="مسار الإيرادات الربعية", height=400, plot_bgcolor='white')
+        # رسم بياني للإيرادات لآخر 12 ربعاً (أو المتوفر)
+        rev_history = fin.loc['Total Revenue'][::-1]
+        fig = go.Figure(data=[go.Bar(x=rev_history.index.astype(str), y=rev_history.values, marker_color='#2b6cb0')])
+        fig.update_layout(title="تطور الإيرادات الربعية الحقيقي", height=400, plot_bgcolor='white')
         st.plotly_chart(fig, use_container_width=True)
     with c2_r:
-        st.info(f"**تحليل النمو:**\nالإيرادات الحالية بلغت {rev_hist.iloc[-1]/1e6:.1f}M.\nبناءً على الاتجاه، الشركة تمر بمرحلة {'نمو' if rev_hist.iloc[-1] > rev_hist.iloc[0] else 'انكماش'} تشغيلي.")
+        growth_rate = ((rev_history.iloc[-1] / rev_history.iloc) - 1) * 100
+        st.info(f"**ملخص النمو الربع سنوي:**\nتغيرت الإيرادات بنسبة **{growth_rate:.1f}%** بين أول ربع وآخر ربع في السلسلة الزمنية المتاحة.")
 
-    # --- 7. التوصية (بناءً على البيانات الحية) ---
-    st.markdown("<div class='section-title'>7. توصية مدير المحفظة الاستراتيجية</div>", unsafe_allow_html=True)
-    curr_p = info.get('currentPrice', 0)
+    # --- 7. التوصية الاستراتيجية ---
+    st.markdown("<div class='section-title'>7. توصية مدير المحفظة (CFA3 Strategy)</div>", unsafe_allow_html=True)
     rec_l, rec_r = st.columns(2)
     with rec_l:
-        st.success(f"🎯 **استراتيجية التجميع:** شراء تدريجي قرب مستويات **{curr_p*0.95:.2f} ريال** (بناءً على التقييم الحالي).")
+        st.success(f"🎯 **استراتيجية التجميع:** الشراء التدريجي قرب مستويات **{curr_price*0.95:.2f} ريال** (بناءً على سعر إغلاق اليوم).")
     with rec_r:
-        st.error(f"🛑 **إدارة المخاطر:** وقف الخسارة عند كسر **{curr_p*0.88:.2f} ريال** (تراجع بنسبة 12% من السعر الحالي).")
+        st.error(f"🛑 **إدارة المخاطر:** وقف الخسارة عند كسر **{curr_price*0.88:.2f} ريال** (تحليل الحساسية بنسبة 12%).")
 
 except Exception as e:
-    st.error(f"يرجى التأكد من الرمز. خطأ في البيانات: {e}")
+    st.error(f"حدث خطأ أثناء جلب البيانات لـ {symbol_input}. يرجى التأكد من الرمز. (الخطأ: {e})")
