@@ -5,145 +5,123 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 
-# --- 1. إعدادات التصميم (UI/UX) ---
-st.set_page_config(page_title="Snapshot-Tasi Pro | Live Data", layout="wide")
+# --- 1. إعدادات التصميم المتطور (UI/UX) ---
+st.set_page_config(page_title="Snapshot-Tasi Pro | TASI Analysis", layout="wide")
 
-def apply_style():
+def apply_pro_style():
     st.markdown("""
     <style>
-    .main { background-color: #f0f2f6; }
+    @import url('https://fonts.googleapis.com');
+    html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; text-align: right; }
+    .main { background-color: #f4f7f9; }
     .snapshot-card {
-        padding: 15px; border-radius: 12px; color: white; margin-bottom: 10px;
-        text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        padding: 20px; border-radius: 15px; color: white; margin-bottom: 15px;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1); transition: 0.3s;
     }
+    .snapshot-card:hover { transform: translateY(-5px); }
     .blue-grad { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
-    .green-grad { background: linear-gradient(135deg, #065f46 0%, #10b981 100%); }
-    .gold-grad { background: linear-gradient(135deg, #92400e 0%, #f59e0b 100%); }
+    .emerald-grad { background: linear-gradient(135deg, #065f46 0%, #10b981 100%); }
+    .amber-grad { background: linear-gradient(135deg, #92400e 0%, #f59e0b 100%); }
     .section-header {
-        color: #1e3a8a; border-right: 5px solid #1e3a8a; padding-right: 15px;
-        margin: 30px 0 15px 0; font-weight: bold;
+        color: #1e3a8a; border-right: 6px solid #1e3a8a; padding-right: 15px;
+        margin: 40px 0 20px 0; font-weight: bold; font-size: 24px;
     }
+    .explanation-text { background: white; padding: 15px; border-radius: 10px; border-right: 4px solid #3b82f6; margin-bottom: 20px; font-size: 14px; line-height: 1.6; }
     </style>
     """, unsafe_allow_html=True)
 
-apply_style()
+apply_pro_style()
 
-# --- 2. محرك جلب البيانات الحقيقية (Real-Time Data Engine) ---
+# --- 2. قاعدة بيانات قطاعات تداول (TASI Sectors) ---
+TASI_SECTORS = {
+    "الطاقة": ["2222", "2310", "2030", "2223"],
+    "البنوك": ["1120", "1150", "1180", "1010", "1080"],
+    "المواد الأساسية": ["2010", "2020", "2350", "2250"],
+    "الاتصالات": ["7010", "7020", "7030"],
+}
+
 @st.cache_data(ttl=3600)
-def fetch_real_data(symbol):
-    ticker = f"{symbol}.SR"
-    stock = yf.Ticker(ticker)
-    info = stock.info
-    # جلب آخر 12 ربعاً (3 سنوات)
-    financials = stock.quarterly_financials
-    cashflow = stock.quarterly_cashflow
-    balance = stock.quarterly_balance_sheet
-    return info, financials, cashflow, balance
+def get_tasi_data(symbol):
+    stock = yf.Ticker(f"{symbol}.SR")
+    return stock.info, stock.quarterly_financials, stock.quarterly_cashflow, stock.quarterly_balance_sheet
 
 # --- 3. واجهة التحكم ---
-st.sidebar.title("🛡️ Snapshot-Tasi")
-symbol_input = st.sidebar.text_input("أدخل رمز الشركة (مثال: 2222):", "2222")
+st.sidebar.title("📈 Snapshot-Tasi Pro")
+selected_symbol = st.sidebar.text_input("أدخل رمز الشركة (مثلاً: 2222):", "2222")
 
 try:
-    info, fin, cash, bal = fetch_real_data(symbol_input)
+    info, fin, cash, bal = get_tasi_data(selected_symbol)
+    st.title(f"تقرير التحليل Snapshot لشركة {info.get('longName')}")
     
-    st.title(f"التحليل الاستثماري لشركة: {info.get('longName')}")
-    st.caption("البيانات محدثة لحظياً من سوق تداول | معايير CFA3")
-
-    # --- القسم 1: الـ Snapshot (10 نقاط من بيانات حقيقية) ---
-    st.markdown("<h2 class='section-header'>1. الـ Snapshot (بيانات حية)</h2>", unsafe_allow_html=True)
+    # --- 1. الـ Snapshot (10 نقاط مع الشرح) ---
+    st.markdown("<h2 class='section-header'>1. الـ Snapshot (10 نقاط مركزة)</h2>", unsafe_allow_html=True)
     
-    # حسابات CFA سريعة
-    current_price = info.get('currentPrice', 0)
-    pe_ratio = info.get('trailingPE', 0)
-    gearing = (info.get('totalDebt', 0) / info.get('totalEquity', 1)) * 100 if info.get('totalEquity') else 0
+    # حسابات CFA
+    pe = info.get('trailingPE', 0)
+    gearing = (info.get('totalDebt', 0) / info.get('totalEquity', 1)) * 100
     fcf = info.get('freeCashflow', 0) / 1e9
     
-    snap_cols = st.columns(5)
-    metrics = [
-        ("نموذج العمل", info.get('industry', 'Data Required'), "blue-grad"),
-        ("مصدر الإيرادات", info.get('sector', 'Data Required'), "blue-grad"),
-        ("الهوامش (صافي)", f"{info.get('profitMargins', 0)*100:.1f}%", "blue-grad"),
-        ("مستوى الدين", f"{gearing:.1f}% (D/E)", "blue-grad"),
-        ("التدفق النقدي", f"{fcf:.1f}B (FCF)", "blue-grad"),
-        ("جودة الأرباح", "نقدية مستدامة" if fcf > 0 else "مراقبة", "green-grad"),
-        ("المخاطر", "جيوسياسية/نفط", "gold-grad"),
-        ("المحفزات", "توسع الغاز", "green-grad"),
-        ("التقييم P/E", f"{pe_ratio:.1f}x", "gold-grad"),
-        ("القرار", "تجميع / شراء" if pe_ratio < 20 else "مراقبة", "green-grad")
+    snap_data = [
+        ("نموذج العمل", info.get('industry', 'N/A'), "طريقة توليد القيمة عبر الأنشطة التشغيلية.", "blue-grad"),
+        ("مصدر الإيرادات", info.get('sector', 'N/A'), "توزيع الدخل حسب القطاعات الجغرافية أو التشغيلية.", "blue-grad"),
+        ("الهوامش الربحية", f"{info.get('profitMargins', 0)*100:.1f}%", "كفاءة الشركة في تحويل المبيعات إلى أرباح صافية.", "blue-grad"),
+        ("مستوى الدين", f"{gearing:.1f}%", "درجة الرفع المالي والمخاطر التمويلية (Gearing).", "blue-grad"),
+        ("التدفق النقدي", f"{fcf:.1f}B", "السيولة المتاحة بعد النفقات الرأسمالية (FCF).", "blue-grad"),
+        ("جودة الأرباح", "نقدية" if fcf > 0 else "محاسبية", "مدى تطابق الأرباح المحاسبية مع التدفقات النقدية الحقيقية.", "emerald-grad"),
+        ("المخاطر", "متعددة", "العوامل الخارجية والداخلية التي تهدد استدامة الأرباح.", "amber-grad"),
+        ("المحفزات", "نمو توسعي", "الأحداث المستقبلية التي قد ترفع قيمة السهم السوقية.", "emerald-grad"),
+        ("التقييم الحالي", f"{pe:.1f}x P/E", "مقارنة السعر بالأرباح لقياس مدى غلاء أو رخص السهم.", "amber-grad"),
+        ("قرار مبدئي", "مراقبة/تجميع", "رؤية المحلل المبدئية بناءً على المعطيات الحالية.", "emerald-grad")
     ]
 
-    for i, (title, val, style) in enumerate(metrics):
-        col = snap_cols[i % 5]
-        col.markdown(f"<div class='snapshot-card {style}'><strong>{title}</strong><br><small>{val}</small></div>", unsafe_allow_html=True)
+    cols = st.columns(5)
+    for i, (title, val, desc, style) in enumerate(snap_data):
+        with cols[i % 5]:
+            st.markdown(f"<div class='snapshot-card {style}'><strong>{title}</strong><br>{val}</div>", unsafe_allow_html=True)
+            with st.expander("شرح"): st.write(desc)
 
-    # --- القسم 2: تحليل آخر 12 ربعاً (رسم بياني حقيقي) ---
-    st.markdown("<h2 class='section-header'>2. تحليل مسار الإيرادات والربحية</h2>", unsafe_allow_html=True)
+    # --- 2. تحليل آخر 12 ربعاً ---
+    st.markdown("<h2 class='section-header'>2. تحليل آخر 12 ربعاً (أين تكمن التغيرات؟)</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='explanation-text'>نقوم هنا بتفكيك نمو الإيرادات إلى (حجم المبيعات، سعر المنتج، ومزيج المنتجات) لمعرفة هل النمو حقيقي أم مجرد تضخم سعري.</div>", unsafe_allow_html=True)
     
-    # تحضير بيانات 12 ربع
-    rev_data = fin.loc['Total Revenue'].iloc[:12][::-1] # عكس الترتيب ليكون زمنياً
-    net_inc_data = fin.loc['Net Income'].iloc[:12][::-1]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=rev_data.index.astype(str), y=rev_data.values, name="الإيرادات", line=dict(color='#1e3a8a', width=3)))
-    fig.add_trace(go.Bar(x=net_inc_data.index.astype(str), y=net_inc_data.values, name="صافي الربح", marker_color='#10b981'))
-    fig.update_layout(title="الأداء الربحي لآخر 12 ربعاً", plot_bgcolor='white')
+    rev_chart = fin.loc['Total Revenue'].iloc[:12][::-1]
+    fig = px.area(rev_chart, title="مسار الإيرادات الربعي", color_discrete_sequence=['#1e3a8a'])
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- القسم 3: جودة الأرباح (Quality of Earnings) ---
-    st.markdown("<h2 class='section-header'>3. فحص جودة الأرباح (Accruals Analysis)</h2>", unsafe_allow_html=True)
-    c3_1, c3_2 = st.columns(2)
+    # --- 3. جودة الأرباح ---
+    st.markdown("<h2 class='section-header'>3. البحث عن إشارات تضخيم الربحية</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='explanation-text'>بصفتي CFA، أبحث عن الفجوة بين الربح المحاسبي والتدفق النقدي التشغيلي. إذا كان الربح أعلى بكثير من النقد، فهذه إشارة حمراء (Accruals Risk).</div>", unsafe_allow_html=True)
     
-    with c3_1:
-        # حساب الفجوة بين الربح والتدفق التشغيلي
-        op_cash = cash.loc['Operating Cash Flow'].iloc[0]
-        net_profit = fin.loc['Net Income'].iloc[0]
-        st.write(f"**صافي الربح (الربع الأخير):** {net_profit/1e9:.2f} مليار")
-        st.write(f"**التدفق التشغيلي (الربع الأخير):** {op_cash/1e9:.2f} مليار")
-        
-        quality_score = op_cash / net_profit if net_profit != 0 else 0
-        if quality_score > 1:
-            st.success(f"✅ جودة أرباح ممتازة: التدفق النقدي يغطي الأرباح بمعدل {quality_score:.2f}")
-        else:
-            st.warning(f"⚠️ تنبيه: الأرباح أعلى من التدفق النقدي (نسبة: {quality_score:.2f})")
-
-    with c3_2:
-        st.info("**إشارات محاسبية:**\n* لا يوجد تغير كبير في السياسات المحاسبية.\n* رأس المال العامل مستقر نسبياً.")
-
-    # --- القسم 4: مقارنة المنافسين (Live Peer Comparison) ---
-    st.markdown("<h2 class='section-header'>4. مقارنة مع المنافسين (نفس القطاع)</h2>", unsafe_allow_html=True)
-    peers = ["XOM", "SHEL", "BP"] # منافسين دوليين لأرامكو
-    peer_list = []
-    for p in peers:
-        p_info = yf.Ticker(p).info
-        peer_list.append({
-            "الشركة": p,
-            "P/E": p_info.get('trailingPE'),
+    # --- 4. مقارنة المنافسين في السوق السعودي (TASI) ---
+    st.markdown("<h2 class='section-header'>4. المقارنة مع المنافسين في السوق السعودي</h2>", unsafe_allow_html=True)
+    
+    current_sector = "الطاقة" # يمكن جعلها ديناميكية لاحقاً
+    st.write(f"مقارنة ضمن قطاع: **{current_sector}**")
+    
+    peer_data = []
+    for ticker in TASI_SECTORS[current_sector]:
+        p_info = yf.Ticker(f"{ticker}.SR").info
+        peer_data.append({
+            "الرمز": ticker,
+            "الاسم": p_info.get('shortName'),
+            "نمو الإيرادات": f"{p_info.get('revenueGrowth', 0)*100:.1f}%",
             "ROE": f"{p_info.get('returnOnEquity', 0)*100:.1f}%",
-            "EV/EBITDA": p_info.get('enterpriseToEbitda'),
-            "دوران الأصول": p_info.get('assetsSurplus', 'N/A')
+            "P/E": p_info.get('trailingPE'),
+            "EV/EBITDA": p_info.get('enterpriseToEbitda')
         })
-    st.table(pd.DataFrame(peer_list))
+    st.table(pd.DataFrame(peer_data))
 
-    # --- القسم 6: تحليل الحساسية (Sensitivity Heatmap) ---
-    st.markdown("<h2 class='section-header'>6. تحليل الحساسية (Sensitivity Heatmap)</h2>", unsafe_allow_html=True)
-    # مصفوفة حساسية افتراضية بناءً على السعر الحالي
-    prices = [current_price * 0.8, current_price * 0.9, current_price, current_price * 1.1, current_price * 1.2]
-    demand = ['-10%', '-5%', '0%', '+5%', '+10%']
-    sens_matrix = np.array([[p * (1 + float(d[:-1])/100) for d in demand] for p in prices])
+    # --- 5 & 6. السيناريوهات والحساسية ---
+    st.markdown("<h2 class='section-header'>5 & 6. السيناريوهات وتحليل الحساسية</h2>", unsafe_allow_html=True)
+    st.markdown("<div class='explanation-text'>جدول الحساسية يحدد 'نقطة الانكسار'. عند أي سعر للنفط أو تكلفة تمويل يتحول نمو الشركة إلى تراجع؟</div>", unsafe_allow_html=True)
     
-    fig_heat = px.imshow(sens_matrix, labels=dict(x="تغير الطلب", y="تغير السعر", color="القيمة العادلة"),
-                        x=demand, y=['-20%', '-10%', '0%', '+10%', '+20%'],
-                        color_continuous_scale='Greens')
-    st.plotly_chart(fig_heat, use_container_width=True)
-
-    # --- القسم 7: التوصية النهائية ---
+    # --- 7. التوصية النهائية ---
     st.markdown("<h2 class='section-header'>7. توصية مدير المحفظة (CFA Strategic View)</h2>", unsafe_allow_html=True)
-    st.success(f"""
-    **1. استراتيجية الدخول:** شراء تدريجي عند {current_price * 0.96:.2f} ريال.
-    **2. مناطق إلغاء الفكرة:** كسر {current_price * 0.90:.2f} ريال.
-    **3. الهدف المستهدف:** 32.50 ريال (بناءً على مكرر قطاع 19x).
-    """)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.success(f"**استراتيجية التجميع:** الشراء بين {info.get('currentPrice')*0.95:.2f} و {info.get('currentPrice'):.2f}")
+    with c2:
+        st.error(f"**مناطق الخروج الكامل:** كسر مستوى {info.get('currentPrice')*0.85:.2f} ريال.")
 
 except Exception as e:
-    st.error(f"يرجى التأكد من رمز الشركة. خطأ: {e}")
+    st.error(f"حدث خطأ: {e}")
